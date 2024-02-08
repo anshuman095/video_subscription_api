@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const {
   createUser,
+  verifyOtp,
   loginUser,
   loginCreator,
   handleRefreshToken,
@@ -25,6 +26,7 @@ const { authMiddleware } = require("../middlewares/authMiddleware");
 upload = require("../middlewares/uploadImagesAndVideos");
 
 router.post("/register", createUser);
+router.put("/verifyOtp", verifyOtp);
 router.post("/login", loginUser);
 router.post("/loginCreator", loginCreator);
 router.get("/handleRefreshToken", handleRefreshToken);

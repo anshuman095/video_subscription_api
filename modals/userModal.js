@@ -21,6 +21,20 @@ var userSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    phone_number: {
+      type: Number,
+      required: true,
+    },
+    otp: {
+      type: Number,
+    },
+    isValidOtp: {
+      type: Boolean,
+      default: false,
+    },
+    stripe_customer_id: {
+      type: String,
+    },
     comments: [
       {
         type: mongoose.Schema.Types.ObjectId,

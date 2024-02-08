@@ -17,7 +17,8 @@ const sendEmailController = asyncHandler(async (data, req, res) => {
     to: data.to,
     subject: data.subject,
     text: data.text,
-    html: data.html,
+    html: data?.html,
+    otp: data?.otp,
   });
 });
 

@@ -1,6 +1,7 @@
 const asyncHandler = require("express-async-handler");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcrypt");
+const speakeasy = require("speakeasy");
 const validateMongoDbId = require("../utils/validateMongoDbId");
 const User = require("../modals/userModal");
 const Video = require("../modals/videoModel");
@@ -8,13 +9,35 @@ const Report = require("../modals/reportModel");
 const { generateToken } = require("../config/jwtToken");
 const { generateRefreshToken } = require("../config/refreshToken");
 const sendEmailController = require("../utils/emailSend");
+const { STRIPE_SECRET_KEY } = process.env;
+const stripe = require("stripe")(STRIPE_SECRET_KEY);
 
 const createUser = asyncHandler(async (req, res) => {
   try {
-    const email = req.body.email;
+    const { email, name } = req.body;
     const findUser = await User.findOne({ email: email });
     if (!findUser) {
-      const newUser = await User.create(req.body);
+      const secret = speakeasy.generateSecret({ length: 20 });
+      const otp = speakeasy.totp({
+        secret: secret.base32,
+        encoding: "base32",
+      });
+      const data = {
+        to: email,
+        text: `Hey User this is otp ${otp} valid for 10 min`,
+        subject: "Otp Verification",
+        otp: otp,
+      };
+      sendEmailController(data);
+      const customer = await stripe.customers.create({
+        name: name,
+        email: email,
+      });
+      const newUser = await User.create({
+        ...req.body,
+        otp: otp,
+        stripe_customer_id: customer.id,
+      });
       res.json(newUser);
     } else {
       throw new Error("User alrady exists");
@@ -27,10 +50,32 @@ const createUser = asyncHandler(async (req, res) => {
   }
 });
 
+const verifyOtp = asyncHandler(async (req, res) => {
+  const { otp, email } = req.body;
+  try {
+    const user = await User.findOne({ otp });
+    if (!user) {
+      res.status(400).json({ message: "Otp is not valid" });
+    }
+    await User.findOneAndUpdate({ otp }, { isValidOtp: true }, { new: true });
+    res.status(200).json({
+      message: "Otp Verfication Successfully",
+    });
+  } catch (err) {
+    res.status(400).json({
+      message: err.message,
+    });
+  }
+});
+
 const loginUser = asyncHandler(async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, phone_number } = req.body;
   const findUser = await User.findOne({ email });
-  if (findUser && (await findUser.isPasswordMatched(password))) {
+  const findPhone = await User.findOne({ phone_number });
+  if (
+    (findUser && (await findUser.isPasswordMatched(password))) ||
+    (findPhone && (await findUser.isPasswordMatched(password)))
+  ) {
     const refreshToken = generateRefreshToken(findUser._id);
     const user = await User.findByIdAndUpdate(
       findUser._id,
@@ -96,7 +141,6 @@ const loginCreator = asyncHandler(async (req, res) => {
 
 const handleRefreshToken = asyncHandler(async (req, res) => {
   const cookie = req.cookies;
-  console.log("cookie", cookie);
   if (!cookie?.refreshToken) {
     throw new Error("No refresh token in cookies");
   }
@@ -319,8 +363,6 @@ const getAllVideos = asyncHandler(async (req, res) => {
       throw new Error("User does not exist");
     }
     const { blockedUsers, blockedBy } = await User.findById(_id);
-    console.log("blockedUsers->", blockedUsers);
-    console.log("blockedBy->", blockedBy);
 
     const videos = await Video.find({
       createdBy: {
@@ -428,7 +470,6 @@ const addToFavourites = asyncHandler(async (req, res) => {
       throw new Error("Video does not exist");
     }
     const alreadyExist = user.favourites.includes(id);
-    console.log("alreadyExist->", alreadyExist);
     if (alreadyExist) {
       user.favourites = user.favourites.filter((videoId) => {
         videoId.toString() !== id;
@@ -506,6 +547,7 @@ const reportOnVideo = asyncHandler(async (req, res) => {
 
 module.exports = {
   createUser,
+  verifyOtp,
   loginUser,
   loginCreator,
   handleRefreshToken,
